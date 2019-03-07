@@ -84,14 +84,19 @@ func setSharedMemSeg(shmmaxVal int) (bool, error) {
 }
 
 // returns instalation folder for given instance
-func getInstanceFolder(inst string) string {
+func getInstanceFolder(inst string, irisCompat bool) string {
 	var folder string
-	cmd := "ccontrol"
+	var cmd string
+	if irisCompat {
+		cmd = "iris"
+	} else {
+		cmd = "ccontrol"
+	}
 	args := []string{"qlist", inst}
 
 	// Output runs the command and returns its standard output
 	if out, err := exec.Command(cmd, args...).Output(); err != nil {
-		log.Printf("Error while getting Cachéinstallation folders\n")
+		log.Printf("Error while getting Caché installation folders\n")
 		log.Printf("ERR: %s.", err)
 		os.Exit(1)
 
@@ -114,11 +119,17 @@ func getInstanceFolder(inst string) string {
 }
 
 // shows all new lines in cconsole.log
-func tailCConsoleLog(inst string) {
-	folder := getInstanceFolder(inst)
+func tailCConsoleLog(inst string, irisCompat bool) {
+	folder := getInstanceFolder(inst, irisCompat)
 	endLocation := tail.SeekInfo{Offset: 0, Whence: os.SEEK_END}
-	if t, err := tail.TailFile(folder+"/mgr/cconsole.log", tail.Config{Follow: true, Location: &endLocation}); err != nil {
-		log.Printf("Error while getting content for cconsole.log\n")
+	var logName string
+	if irisCompat {
+		logName = "/mgr/messages.log"
+	} else {
+		logName = "/mgr/cconsole.log"
+	}
+	if t, err := tail.TailFile(folder+logName, tail.Config{Follow: true, Location: &endLocation}); err != nil {
+		log.Printf("Error while getting content for %s\n", folder+logName)
 		log.Printf("ERR: %s.\n", err)
 	} else {
 		for line := range t.Lines {
@@ -129,11 +140,16 @@ func tailCConsoleLog(inst string) {
 
 // starting Caché
 //
-func startCaché(inst string, nostu bool, cclog bool, fail bool) (bool, error) {
+func startCaché(inst string, nostu bool, cclog bool, fail bool, irisCompat bool) (bool, error) {
 	log.Printf("Starting Caché...\n")
 
 	// building the start string
-	cmd := "ccontrol"
+	var cmd string
+	if irisCompat == true {
+		cmd = "iris"
+	} else {
+		cmd = "ccontrol"
+	}
 	args := []string{"start"}
 	args = append(args, inst)
 	if nostu == true {
@@ -146,7 +162,7 @@ func startCaché(inst string, nostu bool, cclog bool, fail bool) (bool, error) {
 	}
 
 	if cclog {
-		go tailCConsoleLog(inst)
+		go tailCConsoleLog(inst, irisCompat)
 	}
 
 	c := exec.Command(cmd, args...)
@@ -167,7 +183,7 @@ func startCaché(inst string, nostu bool, cclog bool, fail bool) (bool, error) {
 	}
 
 	// check that the start-up was successful
-	if err := checkCmdOutcome("up", inst, fail); err != nil {
+	if err := checkCmdOutcome("up", inst, fail, irisCompat); err != nil {
 		log.Printf("Error: Caché was not brought up successfully.\n")
 		os.Exit(1)
 	}
@@ -180,8 +196,13 @@ func startCaché(inst string, nostu bool, cclog bool, fail bool) (bool, error) {
 //		"up" checks for successful Caché start-up
 // 		"down" checks for successful Caché shutdown
 //
-func checkCmdOutcome(what string, inst string, fail bool) error {
-	cmd := "ccontrol"
+func checkCmdOutcome(what string, inst string, fail bool, irisCompat bool) error {
+	var cmd string
+	if irisCompat {
+		cmd = "iris"
+	} else {
+		cmd = "ccontrol"
+	}
 	args := []string{"qlist", inst}
 
 	// Output runs the command and returns its standard output
@@ -232,10 +253,15 @@ func checkCmdOutcome(what string, inst string, fail bool) error {
 
 // starting Caché app by calling a routine or class method
 //
-func startApp(inst string, nmsp string, rou string) (bool, error) {
+func startApp(inst string, nmsp string, rou string, irisCompat bool) (bool, error) {
 	log.Printf("Starting app '%s' in '%s'...\n", rou, nmsp)
 
-	cmd := "ccontrol"
+	var cmd string
+	if irisCompat {
+		cmd = "iris"
+	} else {
+		cmd = "ccontrol"
+	}
 	args := []string{"session", inst, "-U", nmsp, rou}
 	c := exec.Command(cmd, args...)
 
@@ -259,10 +285,15 @@ func startApp(inst string, nmsp string, rou string) (bool, error) {
 
 // Stopping Caché
 //
-func shutdownCaché(inst string) (bool, error) {
+func shutdownCaché(inst string, irisCompat bool) (bool, error) {
 	log.Printf("Shutting down Caché...\n")
 
-	cmd := "ccontrol"
+	var cmd string
+	if irisCompat {
+		cmd = "iris"
+	} else {
+		cmd = "ccontrol"
+	}
 	args := []string{"stop", inst, "quietly"}
 
 	if err := exec.Command(cmd, args...).Run(); err != nil {
@@ -274,7 +305,7 @@ func shutdownCaché(inst string) (bool, error) {
 	}
 
 	// check that the shutdown was successful
-	if err := checkCmdOutcome("down", inst, false); err != nil {
+	if err := checkCmdOutcome("down", inst, false, irisCompat); err != nil {
 		log.Printf("Error: Caché was not shutdown successfully.\n")
 		os.Exit(1)
 	}
@@ -497,6 +528,8 @@ func main() {
 
 	pVersion := flag.Bool("version", false, "prints version")
 
+	pIrisCompat := flag.Bool("iris-compat", false, "enable IRIS compatibility mode")
+
 	flag.Parse()
 
 	inst := *pFinst
@@ -512,6 +545,7 @@ func main() {
 	exeStart := *pFexeStart
 	exeStop := *pFexeStop
 	ver := *pVersion
+	irisCompat := *pIrisCompat
 
 	if dbg {
 		log.Printf("flag instance: %s\n", inst)
@@ -527,6 +561,7 @@ func main() {
 		log.Printf("flag xstart: %s\n", exeStart)
 		log.Printf("flag xstop: %s\n", exeStop)
 		log.Printf("flag v: %t\n", ver)
+		log.Printf("flag iris-compat: %t\n", irisCompat)
 
 		log.Printf("command supplied: %q\n", flag.Args())
 		log.Printf("--\n")
@@ -571,7 +606,7 @@ func main() {
 
 		// 1.2--
 		// starting Caché
-		_, err := startCaché(inst, nostu, cclog, fail)
+		_, err := startCaché(inst, nostu, cclog, fail, irisCompat)
 		if err != nil {
 			log.Printf("\nError starting up Caché: %s\n", err)
 			os.Exit(1)
@@ -582,7 +617,7 @@ func main() {
 		// 1.3--
 		// starting Caché app if we were told to
 		if rou != "" && nmsp != "" {
-			_, err = startApp(inst, nmsp, rou)
+			_, err = startApp(inst, nmsp, rou, irisCompat)
 			if err != nil {
 				log.Printf("\nError starting up the app %s in namespace %s; Err: %s\n", rou, nmsp, err)
 				os.Exit(1)
@@ -636,7 +671,7 @@ func main() {
 	// Bring Caché down cleanly
 	//
 	if cstop == true {
-		_, err := shutdownCaché(inst)
+		_, err := shutdownCaché(inst, irisCompat)
 		if err != nil {
 			log.Printf("\nError shutting down Caché: %s\n", err)
 			os.Exit(1)
