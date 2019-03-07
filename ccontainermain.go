@@ -528,7 +528,9 @@ func main() {
 
 	pVersion := flag.Bool("version", false, "prints version")
 
-	pIrisCompat := flag.Bool("iris-compat", false, "enable IRIS compatibility mode")
+	pIrisCompat := flag.Bool("iris-compat",
+		(strings.ToUpper(os.Getenv("ISC_KIT_PRODUCT_TYPE")) == "IRIS"),
+		"enable IRIS compatibility mode")
 
 	flag.Parse()
 
